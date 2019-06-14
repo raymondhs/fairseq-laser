@@ -1,10 +1,12 @@
+from collections import OrderedDict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq import utils
 from fairseq.models import (
-    FairseqEncoderDecoderModel,
+    FairseqMultiModel,
     FairseqIncrementalDecoder,
     register_model,
     register_model_architecture,
@@ -15,6 +17,8 @@ from fairseq.models.lstm import (
     LSTM,
     LSTMEncoder,
 )
+
+from .translation_laser import TranslationLaserTask
 
 
 class LaserLSTMEncoder(LSTMEncoder):
@@ -53,7 +57,7 @@ class LaserLSTMDecoder(FairseqIncrementalDecoder):
     ''' LASER-style LSTM decoder '''
     def __init__(
         self, dictionary, encoder_output_units=512, embed_dim=512,
-        hidden_size=512, lang_num_embeddings=0, lang_embed_dim=32,
+        hidden_size=512, num_langs=0, lang_embed_dim=32,
         dropout_in=0.1, dropout_out=0.1, pretrained_embed=None,
     ):
         super().__init__(dictionary)
@@ -71,12 +75,12 @@ class LaserLSTMDecoder(FairseqIncrementalDecoder):
         self.encoder_output_units = encoder_output_units
         input_size = encoder_output_units + embed_dim
         self.embed_lang = None
-        if lang_num_embeddings > 0:
+        if num_langs > 0:
             self.embed_lang = Embedding(
-                num_embeddings=lang_num_embeddings,
+                num_embeddings=num_langs+1,
                 embedding_dim=lang_embed_dim,
                 padding_idx=0,
-                )
+            )
             # include language embedding size
             input_size += lang_embed_dim
 
@@ -104,7 +108,7 @@ class LaserLSTMDecoder(FairseqIncrementalDecoder):
         # embed tokens
         x = self.embed_tokens(prev_output_tokens)
         # optional language ID embedding
-        if trg_segments is not None:
+        if self.embed_lang is not None and trg_segments is not None:
             x_lang = self.embed_lang(trg_segments)
             x = torch.cat([x, x_lang], dim=2)
         x = F.dropout(x, p=self.dropout_in, training=self.training)
@@ -152,7 +156,10 @@ class LaserLSTMDecoder(FairseqIncrementalDecoder):
 
 
 @register_model('laser_lstm')
-class LaserLSTMModel(FairseqEncoderDecoderModel):
+class LaserLSTMModel(FairseqMultiModel):
+
+    def __init__(self, encoders, decoders):
+        super().__init__(encoders, decoders)
 
     @staticmethod
     def add_args(parser):
@@ -169,6 +176,10 @@ class LaserLSTMModel(FairseqEncoderDecoderModel):
             help='encoder dropout probability',
         )
         parser.add_argument(
+            '--encoder-num-layers', type=int, metavar='N',
+            help='number of encoder layers',
+        )
+        parser.add_argument(
             '--decoder-embed-dim', type=int, metavar='N',
             help='dimensionality of the decoder embeddings',
         )
@@ -180,41 +191,80 @@ class LaserLSTMModel(FairseqEncoderDecoderModel):
             '--decoder-dropout', type=float, default=0.1,
             help='decoder dropout probability',
         )
+        parser.add_argument(
+            '--lang-embeddings', action='store_true',
+            help='whether to use language embeddings in the decoder',
+        )
+        parser.add_argument(
+            '--lang-embed-dim', type=int, metavar='N',
+            help='dimensionality of the language id embeddings',
+        )
 
     @classmethod
     def build_model(cls, args, task):
-        # Initialize our Encoder and Decoder.
+        assert isinstance(task, TranslationLaserTask)
+
+        src_langs = [lang_pair.split('-')[0] for lang_pair in task.model_lang_pairs]
+        tgt_langs = [lang_pair.split('-')[1] for lang_pair in task.model_lang_pairs]
+
+        # shared encoder/decoder
         encoder = LaserLSTMEncoder(
-            task.source_dictionary,
+            task.dicts[src_langs[0]],
             embed_dim=args.encoder_embed_dim,
             hidden_size=args.encoder_hidden_dim,
+            num_layers=args.encoder_num_layers,
             dropout_in=args.encoder_dropout,
             dropout_out=args.encoder_dropout,
         )
         decoder = LaserLSTMDecoder(
-            task.target_dictionary,
+            task.dicts[tgt_langs[0]],
             encoder_output_units=args.encoder_hidden_dim,
             embed_dim=args.decoder_embed_dim,
             hidden_size=args.decoder_hidden_dim,
             dropout_in=args.decoder_dropout,
             dropout_out=args.decoder_dropout,
+            num_langs=len(task.langs) if args.lang_embeddings else 0,
+            lang_embed_dim=args.lang_embed_dim,
         )
-        model = LaserLSTMModel(encoder, decoder)
 
-        # Print the model architecture.
-        print(model)
+        encoders, decoders = OrderedDict(), OrderedDict()
+        for lang_pair, src, tgt in zip(task.model_lang_pairs, src_langs, tgt_langs):
+            encoders[lang_pair] = encoder
+            decoders[lang_pair] = decoder
+        return LaserLSTMModel(encoders, decoders)
 
-        return model
-
-    def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
-        encoder_out = self.encoder(src_tokens, src_lengths=src_lengths)
-        decoder_out = self.decoder(prev_output_tokens, encoder_out=encoder_out, **kwargs)
-        return decoder_out
+    def load_state_dict(self, state_dict, strict=True):
+        state_dict_subset = state_dict.copy()
+        for k, _ in state_dict.items():
+            assert k.startswith('models.')
+            lang_pair = k.split('.')[1]
+            if lang_pair not in self.models:
+                del state_dict_subset[k]
+        super().load_state_dict(state_dict_subset, strict=strict)
 
 
 @register_model_architecture('laser_lstm', 'laser_lstm')
-def laser_lstm(args):
+def base_architecture(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 256)
     args.encoder_hidden_dim = getattr(args, 'encoder_hidden_dim', 256)
+    args.encoder_num_layers = getattr(args, 'encoder_num_layers', 1)
+    args.encoder_dropout = getattr(args, 'encoder_dropout', 0.1)
     args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 256)
     args.decoder_hidden_dim = getattr(args, 'decoder_hidden_dim', 256)
+    args.decoder_dropout = getattr(args, 'decoder_dropout', 0.1)
+    args.lang_embeddings = getattr(args, 'lang_embeddings', False)
+    args.lang_embed_dim = getattr(args, 'lang_embed_dim', 32)
+
+
+@register_model_architecture('laser_lstm', 'laser_lstm_artetxe')
+def laser_lstm_artetxe(args):
+    args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 320)
+    args.encoder_hidden_dim = getattr(args, 'encoder_hidden_dim', 512)
+    args.encoder_num_layers = getattr(args, 'encoder_num_layers', 5)
+    args.encoder_dropout = getattr(args, 'encoder_dropout', 0.1)
+    args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 320)
+    args.decoder_hidden_dim = getattr(args, 'decoder_hidden_dim', 2048)
+    args.decoder_dropout = getattr(args, 'decoder_dropout', 0.1)
+    args.lang_embeddings = getattr(args, 'lang_embeddings', True)
+    args.lang_embed_dim = getattr(args, 'lang_embed_dim', 32)
+    base_architecture()
