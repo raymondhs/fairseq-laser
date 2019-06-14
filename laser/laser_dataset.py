@@ -21,11 +21,10 @@ class LaserDataset(FairseqDataset):
         if len(samples) == 0:
             return {}
 
-        def merge(key, left_pad, move_eos_to_beginning=False):
+        def merge(key, left_pad):
             return data_utils.collate_tokens(
-                [s[key] for s in samples],
-                self.dataset.src_dict.pad(),
-                self.dataset.src_dict.eos(), left_pad, move_eos_to_beginning,
+                [s[key] for s in samples], 0,
+                left_pad=left_pad,
             )
 
         batch = self.dataset.collater(samples)
