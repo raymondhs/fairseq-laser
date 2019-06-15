@@ -98,7 +98,7 @@ class LaserLSTMDecoder(FairseqIncrementalDecoder):
         self.sentemb_cell_proj = Linear(encoder_output_units, hidden_size)
         self.fc_out = Linear(hidden_size, num_embeddings)
 
-    def forward(self, prev_output_tokens, encoder_out, trg_segments=None, incremental_state=None):
+    def forward(self, prev_output_tokens, encoder_out, tgt_segments=None, incremental_state=None):
         sentemb = encoder_out['sentemb']
 
         if incremental_state is not None:
@@ -108,8 +108,10 @@ class LaserLSTMDecoder(FairseqIncrementalDecoder):
         # embed tokens
         x = self.embed_tokens(prev_output_tokens)
         # optional language ID embedding
-        if self.embed_lang is not None and trg_segments is not None:
-            x_lang = self.embed_lang(trg_segments)
+        if self.embed_lang is not None:
+            if tgt_segments is None:
+                raise ValueError('Current model with lang embeddings does not support inference.')
+            x_lang = self.embed_lang(tgt_segments)
             x = torch.cat([x, x_lang], dim=2)
         x = F.dropout(x, p=self.dropout_in, training=self.training)
         x = torch.cat(
@@ -267,4 +269,4 @@ def laser_lstm_artetxe(args):
     args.decoder_dropout = getattr(args, 'decoder_dropout', 0.1)
     args.lang_embeddings = getattr(args, 'lang_embeddings', True)
     args.lang_embed_dim = getattr(args, 'lang_embed_dim', 32)
-    base_architecture()
+    base_architecture(args)
