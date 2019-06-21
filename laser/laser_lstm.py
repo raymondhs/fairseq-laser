@@ -25,13 +25,11 @@ class LaserLSTMEncoder(LSTMEncoder):
 
     def forward(self, src_tokens, src_lengths, **kwargs):
         encoder_out = super().forward(src_tokens, src_lengths)
+
         encoder_padding_mask = encoder_out['encoder_padding_mask']
         x, final_hiddens, final_cells = encoder_out['encoder_out']
 
         if encoder_padding_mask is not None:
-
-            encoder_padding_mask = src_tokens.eq(self.padding_idx).t()
-
             # Set padded outputs to -inf so they are not selected by max-pooling
             padding_mask = encoder_padding_mask.unsqueeze(-1)
             if padding_mask.any():
@@ -215,12 +213,13 @@ class LaserLSTMModel(FairseqMultiModel):
             embed_dim=args.encoder_embed_dim,
             hidden_size=args.encoder_hidden_dim,
             num_layers=args.encoder_num_layers,
+            bidirectional=True,
             dropout_in=args.encoder_dropout,
             dropout_out=args.encoder_dropout,
         )
         decoder = LaserLSTMDecoder(
             task.dicts[tgt_langs[0]],
-            encoder_output_units=args.encoder_hidden_dim,
+            encoder_output_units=args.encoder_hidden_dim * 2,
             embed_dim=args.decoder_embed_dim,
             hidden_size=args.decoder_hidden_dim,
             dropout_in=args.decoder_dropout,

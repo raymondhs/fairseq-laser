@@ -27,12 +27,13 @@ class LaserDataset(FairseqDataset):
             )
 
         batch = self.dataset.collater(samples)
-        # add target language id
-        for s in samples:
-            tgt_length = s['target'].numel()
-            tgt_segments = np.ones(tgt_length) * self.tgt_langid
-            s['tgt_segments'] = torch.LongTensor(tgt_segments)
-        batch['net_input']['tgt_segments'] = merge('tgt_segments', left_pad=self.dataset.left_pad_target)
+        if samples[0].get('target', None) is not None:
+            # add target language id
+            for s in samples:
+                tgt_length = s['target'].numel()
+                tgt_segments = np.ones(tgt_length) * self.tgt_langid
+                s['tgt_segments'] = torch.LongTensor(tgt_segments)
+            batch['net_input']['tgt_segments'] = merge('tgt_segments', left_pad=self.dataset.left_pad_target)
         return batch
 
     def num_tokens(self, index):
