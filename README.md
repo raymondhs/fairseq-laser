@@ -8,31 +8,35 @@ First, pre-process your data (e.g., using SentencePiece) [example script](https:
 
 ```
 $ mkdir -p checkpoints/laser_lstm
-$ fairseq-train data-bin/iwslt17.de_fr.en.bpe16k/ \
-  --max-epoch 17 \
-  --ddp-backend=no_c10d \
-  --task translation_laser --lang-pairs de-en,fr-en \
-  --arch laser_lstm_artetxe \
-  --encoder-num-layers 5 \
-  --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
-  --lr 0.001 --lr-scheduler fixed \
-  --weight-decay 0.0 --criterion cross_entropy \
-  --save-dir checkpoints/laser_lstm \
-  --max-tokens 3584 \
-  --update-freq 8 \
-  --no-progress-bar --log-interval 50 \
-  --user-dir $PWD/laser/
+$ CUDA_VISIBLE_DEVICES=0 fairseq-train data-bin/iwslt17.de_fr.en.bpe16k/ \
+    --max-epoch 17 \
+    --ddp-backend=no_c10d \
+    --task translation_laser --lang-pairs de-en,fr-en \
+    --arch laser_lstm_artetxe \
+    --encoder-num-layers 5 \
+    --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
+    --lr 0.001 --lr-scheduler fixed \
+    --weight-decay 0.0 --criterion cross_entropy \
+    --save-dir checkpoints/laser_lstm \
+    --max-tokens 3584 \
+    --update-freq 8 \
+    --no-progress-bar --log-interval 50 \
+    --user-dir $PWD/laser/
 ```
 
 ## Generate Embeddings
 
 ```
 $ SRC=de
-$ cat iwslt17.test.${SRC}-en.${SRC}.bpe | python embed.py data-bin/iwslt17.de_fr.en.bpe16k/ \
-  --task translation_laser --source-lang ${SRC} -- target-lang en \
+$ sacrebleu --test-set iwslt17 --language-pair ${SRC}-en --echo src > iwslt17.test.${SRC}-en.${SRC}
+$ cat iwslt17.test.${SRC}-en.${SRC} | python embed.py data-bin/iwslt17.de_fr.en.bpe16k/ \
+  --task translation_laser --lang-pairs de-en,fr-en \
+  --source-lang ${SRC} --target-lang en \
   --path checkpoints/laser_lstm/checkpoint_best.pt \
-  --buffer 2000 --batch-size 128 \
-  --output-file iwslt17.test.${SRC}-en.${SRC}.enc
+  --buffer-size 2000 --batch-size 128 \
+  --output-file iwslt17.test.${SRC}-en.${SRC}.enc \
+  --spm-model examples/translation/iwslt17.de_fr.en.bpe16k/sentencepiece.bpe.model \
+  --user-dir $PWD/laser
 ```
 
 ### Output format
