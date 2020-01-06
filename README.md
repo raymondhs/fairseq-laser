@@ -24,6 +24,17 @@ $ CUDA_VISIBLE_DEVICES=0 fairseq-train data-bin/iwslt17.de_fr.en.bpe16k/ \
     --user-dir $PWD/laser/
 ```
 
+Note: When training on multiple GPUs, this error may occur: `ModuleNotFoundError: No module named 'laser'`. This seems to be a known issue related to Python's `multiprocessing` (similar issue [here](https://github.com/microsoft/MASS/tree/master/MASS-summarization#other-questions)). As a workaround, move the three .py files to its corresponding folder in fairseq:
+
+```
+$ FAIRSEQ_ROOT=/path/to/fairseq/
+$ cp laser/laser_dataset.py $FAIRSEQ_ROOT/fairseq/data
+$ cp laser/laser_lstm.py $FAIRSEQ_ROOT/fairseq/models
+$ cp laser/translation_laser.py $FAIRSEQ_ROOT/fairseq/tasks
+$ sed -i 's/\.translation_laser/fairseq.tasks.translation_laser/' $FAIRSEQ_ROOT/fairseq/models/laser_lstm.py
+$ sed -i 's/\.laser_dataset/fairseq.data.laser_dataset/' $FAIRSEQ_ROOT/fairseq/tasks/translation_laser.py
+```
+
 ## Generate Embeddings
 
 ```
