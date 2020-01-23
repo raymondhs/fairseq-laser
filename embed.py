@@ -7,12 +7,14 @@ from collections import namedtuple
 import fileinput
 
 import torch
-
-from fairseq import checkpoint_utils, options, tasks, utils
-
 import numpy as np
 
+from fairseq import checkpoint_utils, options, tasks, utils
+from fairseq.data import encoders
+
+
 Batch = namedtuple('Batch', 'ids src_tokens src_lengths')
+Translation = namedtuple('Translation', 'src_str hypos pos_scores alignments')
 
 
 def buffered_read(input, buffer_size):
@@ -74,27 +76,41 @@ def main(args):
         arg_overrides=eval(args.model_overrides),
         task=task,
     )
-    model = models[0] # Just a single model
 
     # Set dictionaries
     src_dict = task.source_dictionary
     tgt_dict = task.target_dictionary
 
-    if use_cuda:
-        model.cuda()
+    # Optimize ensemble for generation
+    for model in models:
+        model.make_generation_fast_(
+            beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
+            need_attn=args.print_alignment,
+        )
+        if args.fp16:
+            model.half()
+        if use_cuda:
+            model.cuda()
 
-    if args.spm_model:
-        import sentencepiece as spm
-        # Load SentencePiece model
-        sp = spm.SentencePieceProcessor()
-        sp.Load(args.spm_model)
-        def encode_spm(l):
-            result = ' '.join(sp.EncodeAsPieces(l))
-            #print("{} -> {}".format(l, result))
-            return result
-        encode_fn = encode_spm
-    else:
-        encode_fn = lambda x: x
+    model = models[0] # Just a single model
+
+    # Handle tokenization and BPE
+    tokenizer = encoders.build_tokenizer(args)
+    bpe = encoders.build_bpe(args)
+
+    def encode_fn(x):
+        if tokenizer is not None:
+            x = tokenizer.encode(x)
+        if bpe is not None:
+            x = bpe.encode(x)
+        return x
+
+    def decode_fn(x):
+        if bpe is not None:
+            x = bpe.decode(x)
+        if tokenizer is not None:
+            x = tokenizer.decode(x)
+        return x
 
     max_positions = utils.resolve_max_positions(
         task.max_positions(),
@@ -104,7 +120,6 @@ def main(args):
     fout = open(args.output_file, mode='wb')
     if args.buffer_size > 1:
         print('| Sentence buffer size:', args.buffer_size)
-    print('| Reading input sentence from stdin')
     start_id = 0
     for inputs in buffered_read(args.input, args.buffer_size):
         indices = []
@@ -115,7 +130,7 @@ def main(args):
             if use_cuda:
                 src_tokens = src_tokens.cuda()
                 src_lengths = src_lengths.cuda()
-
+            
             model.eval()
             embeddings = model.encoder(src_tokens, src_lengths)['sentemb']
             embeddings = embeddings.detach().cpu().numpy()
@@ -128,12 +143,11 @@ def main(args):
         start_id += len(inputs)
     fout.close()
 
+
 def cli_main():
     parser = options.get_generation_parser(interactive=True)
     parser.add_argument('--output-file', required=True,
                         help='Output sentence embeddings')
-    parser.add_argument('--spm-model',
-                        help='(optional) Path to SentencePiece model')
     args = options.parse_args_and_arch(parser)
     main(args)
 
