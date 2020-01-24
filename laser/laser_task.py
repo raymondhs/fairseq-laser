@@ -10,9 +10,7 @@ from fairseq.data import (
 from fairseq.tasks import FairseqTask, register_task
 from fairseq.tasks.multilingual_translation import MultilingualTranslationTask, load_langpair_dataset
 
-from fairseq.data.add_decoder_lang_dataset import AddDecoderLangDataset
-from fairseq.data.multi_corpus_sampled_with_eval_key_dataset import MultiCorpusSampledWithEvalKeyDataset
-
+from .laser_dataset import LaserDataset
 
 @register_task('translation_laser')
 class TranslationLaserTask(FairseqTask):
@@ -58,9 +56,9 @@ class TranslationLaserTask(FairseqTask):
                 max_source_positions=self.args.max_source_positions,
                 max_target_positions=self.args.max_target_positions,
             )
-            return AddDecoderLangDataset(langpair_dataset, tgt)
+            return langpair_dataset
 
-        self.datasets[split] = MultiCorpusSampledWithEvalKeyDataset(
+        self.datasets[split] = LaserDataset(
             OrderedDict([
                 (lang_pair, language_pair_dataset(lang_pair))
                 for lang_pair in self.lang_pairs
@@ -70,15 +68,12 @@ class TranslationLaserTask(FairseqTask):
 
     def build_dataset_for_inference(self, src_tokens, src_lengths):
         lang_pair = "%s-%s" % (self.args.source_lang, self.args.target_lang)
-        return MultiCorpusSampledWithEvalKeyDataset(
+        return LaserDataset(
             OrderedDict([(
                 lang_pair,
-                AddDecoderLangDataset(
-                    LanguagePairDataset(
-                        src_tokens, src_lengths,
-                        self.source_dictionary
-                    ),
-                    self.args.target_lang,
+                LanguagePairDataset(
+                    src_tokens, src_lengths,
+                    self.source_dictionary
                 ),
             )]),
             eval_key=lang_pair,
@@ -91,7 +86,7 @@ class TranslationLaserTask(FairseqTask):
 
         from fairseq import models
         model = models.build_model(args, self)
-        from fairseq.models.laser import LaserModel
+        from .laser_lstm import LaserModel
         if not isinstance(model, LaserModel):
             raise ValueError('TranslationLaserTask requires a LaserModel architecture')
         return model

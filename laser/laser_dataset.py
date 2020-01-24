@@ -11,7 +11,13 @@ def uniform_sampler(x):
     return np.random.choice(x, 1).item()
 
 
-class MultiCorpusSampledWithEvalKeyDataset(FairseqDataset):
+def add_decoder_language(batch, lang_pair):
+    tgt = lang_pair.split('-')[1]
+    batch['net_input']['decoder_lang'] = tgt
+    return batch
+
+
+class LaserDataset(FairseqDataset):
     """
     Stores multiple instances of FairseqDataset together and in every iteration
     creates a batch by first sampling a dataset according to a specified
@@ -109,9 +115,15 @@ class MultiCorpusSampledWithEvalKeyDataset(FairseqDataset):
         if self.eval_key is None:
             selected_key = self.sampling_func(list(self.datasets.keys()))
             selected_samples = [sample[selected_key] for sample in samples]
-            return self.datasets[selected_key].collater(selected_samples)
+            return add_decoder_language(
+                self.datasets[selected_key].collater(selected_samples),
+                selected_key
+            )
         else:
-            return self.datasets[self.eval_key].collater(samples)
+            return add_decoder_language(
+                self.datasets[self.eval_key].collater(samples),
+                self.eval_key
+            )
 
     def num_tokens(self, index: int):
         """

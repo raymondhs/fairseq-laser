@@ -20,7 +20,6 @@ from fairseq.models.lstm import (
     LSTMModel,
 )
 
-
 @register_model('laser')
 class LaserModel(FairseqEncoderDecoderModel):
     """Laser Encoder-Decoder implementation adapted from:
@@ -43,7 +42,7 @@ class LaserModel(FairseqEncoderDecoderModel):
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
-        from fairseq.tasks.translation_laser import TranslationLaserTask
+        from .laser_task import TranslationLaserTask
         assert isinstance(task, TranslationLaserTask)
 
         shared_dict = task.dicts[task.langs[0]]
