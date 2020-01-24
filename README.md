@@ -1,38 +1,32 @@
 # fairseq-laser
 
-Implementing LASER architecture using fairseq library.
+Implementing LASER architecture using fairseq library. Refer to the `examples` directory for running experiments on similarity search and bitext mining similar to Artexte and Schwenk (2018).
+
+## Install
+
+This code has been tested on PyTorch 1.3.1 and fairseq 0.9.0. To install:
+
+* Make sure fairseq installation is editable (`pip install --editable /path/to/fairseq`).
+* Set the environment variable 'FAIRSEQ' to fairseq root (`export FAIRSEQ=/path/to/fairseq`).
+* Run `bash ./install.sh`. This will copy the files in `laser` to appropriate directories in `$FAIRSEQ`.
 
 ## Training
 
-First, pre-process your data (e.g., using SentencePiece) [example script](https://github.com/pytorch/fairseq/blob/master/examples/translation/prepare-iwslt17-multilingual.sh). Example usage for training:
+First, pre-process your data (e.g., using this [example script](https://github.com/pytorch/fairseq/blob/master/examples/translation/prepare-iwslt17-multilingual.sh)). Example usage for training:
 
 ```
-$ mkdir -p checkpoints/laser_lstm
+$ mkdir -p checkpoints/laser
 $ CUDA_VISIBLE_DEVICES=0 fairseq-train data-bin/iwslt17.de_fr.en.bpe16k/ \
-    --max-epoch 17 \
+    --max-epoch 50 \
     --ddp-backend=no_c10d \
     --task translation_laser --lang-pairs de-en,fr-en \
-    --arch laser_lstm_artetxe \
-    --encoder-num-layers 5 \
-    --optimizer adam --adam-betas '(0.9, 0.98)' --clip-norm 0.0 \
-    --lr 0.001 --lr-scheduler fixed \
-    --weight-decay 0.0 --criterion cross_entropy \
-    --save-dir checkpoints/laser_lstm \
-    --max-tokens 3584 \
-    --update-freq 8 \
-    --no-progress-bar --log-interval 50 \
-    --user-dir $PWD/laser/
-```
-
-Note: When training on multiple GPUs, this error may occur: `ModuleNotFoundError: No module named 'laser'`. This seems to be a known issue related to Python's `multiprocessing` (similar issue [here](https://github.com/microsoft/MASS/tree/master/MASS-summarization#other-questions)). As a workaround, move the three .py files to its corresponding folder in fairseq:
-
-```
-$ FAIRSEQ_ROOT=/path/to/fairseq/
-$ cp laser/laser_dataset.py $FAIRSEQ_ROOT/fairseq/data
-$ cp laser/laser_lstm.py $FAIRSEQ_ROOT/fairseq/models
-$ cp laser/translation_laser.py $FAIRSEQ_ROOT/fairseq/tasks
-$ sed -i 's/\.translation_laser/fairseq.tasks.translation_laser/' $FAIRSEQ_ROOT/fairseq/models/laser_lstm.py
-$ sed -i 's/\.laser_dataset/fairseq.data.laser_dataset/' $FAIRSEQ_ROOT/fairseq/tasks/translation_laser.py
+    --arch laser --encoder-num-layers 5 \
+    --encoder-embed-dim 320 --decoder-embed-dim 320 \
+    --optimizer adam --adam-betas '(0.9, 0.98)' \
+    --lr 0.001 --criterion cross_entropy \
+    --save-dir checkpoints/laser \
+    --max-tokens 4000 \
+    --update-freq 8
 ```
 
 ## Generate Embeddings
@@ -43,11 +37,9 @@ $ sacrebleu --test-set iwslt17 --language-pair ${SRC}-en --echo src > iwslt17.te
 $ cat iwslt17.test.${SRC}-en.${SRC} | python embed.py data-bin/iwslt17.de_fr.en.bpe16k/ \
   --task translation_laser --lang-pairs de-en,fr-en \
   --source-lang ${SRC} --target-lang en \
-  --path checkpoints/laser_lstm/checkpoint_best.pt \
+  --path checkpoints/laser/checkpoint_best.pt \
   --buffer-size 2000 --batch-size 128 \
-  --output-file iwslt17.test.${SRC}-en.${SRC}.enc \
-  --spm-model examples/translation/iwslt17.de_fr.en.bpe16k/sentencepiece.bpe.model \
-  --user-dir $PWD/laser
+  --output-file iwslt17.test.${SRC}-en.${SRC}.enc
 ```
 
 ### Output format
@@ -57,12 +49,17 @@ They can be read in Python by:
 ```
 import numpy as np
 dim = 1024
-X = np.fromfile("iwslt17.test.${SRC}-en.${SRC}.enc", dtype=np.float32, count=-1)                                                                          
+X = np.fromfile("iwslt17.test.de-en.de.enc", dtype=np.float32, count=-1)                                                                          
 X.resize(X.shape[0] // dim, dim)                                                                                                 
 ```
 X is a N x 1024 matrix where N is the number of lines in the text file.
 
 ## References
+
+Mikel Artetxe and Holger Schwenk,
+    [*Margin-based Parallel Corpus Mining with Multilingual Sentence Embeddings*]
+    (https://arxiv.org/abs/1811.01136)
+    arXiv, Nov 3 2018.
 
 Mikel Artetxe and Holger Schwenk,
     [*Massively Multilingual Sentence Embeddings for Zero-Shot Cross-Lingual Transfer and Beyond*](https://arxiv.org/abs/1812.10464)
