@@ -22,6 +22,7 @@ class LaserDataset(FairseqDataset):
     Stores multiple instances of FairseqDataset together and in every iteration
     creates a batch by first sampling a dataset according to a specified
     probability distribution and then getting instances from that dataset.
+    Adapted from: https://github.com/pytorch/fairseq/blob/master/fairseq/data/multi_corpus_sampled_dataset.py.
 
     Args:
         datasets: an OrderedDict of FairseqDataset instances.

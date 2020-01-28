@@ -18,9 +18,7 @@ class TranslationLaserTask(FairseqTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
-        # fmt: off
         MultilingualTranslationTask.add_args(parser)
-        # fmt: on
 
     def __init__(self, args, dicts, training):
         super().__init__(args)

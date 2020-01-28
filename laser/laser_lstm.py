@@ -34,10 +34,8 @@ class LaserModel(FairseqEncoderDecoderModel):
     def add_args(parser):
         """Add model-specific arguments to the parser."""
         LSTMModel.add_args(parser)
-        # fmt: off
         parser.add_argument('--lang-embedding-size', type=int, default=32,
                             help='language embedding dimension')
-        # fmt: on
 
     @classmethod
     def build_model(cls, args, task):
